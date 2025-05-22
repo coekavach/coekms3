@@ -1,0 +1,1024 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KMS: Knowledge Management System - Kavach</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet MarkerCluster CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <style>
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            80% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        @keyframes underlineExpand {
+            0% { width: 0; }
+            100% { width: 100%; }
+        }
+        
+        @keyframes cardEnter {
+            0% { transform: translateY(20px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        @keyframes fadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+        
+        @keyframes slideInFromTop {
+            0% { transform: translateY(-50px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+        }
+        
+        @keyframes scrollUp {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-50%); }
+        }
+        
+        .logo-animate {
+            animation: popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        
+        .header-underline {
+            position: relative;
+        }
+        
+        .header-underline::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 0;
+            height: 3px;
+            background: #3b82f6;
+            animation: underlineExpand 0.8s ease-out forwards;
+        }
+        
+        .nav-item {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-item::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: #3b82f6;
+            transition: width 0.3s ease;
+        }
+        
+        .nav-item:hover::after {
+            width: 100%;
+        }
+        
+        .nav-item.active::after {
+            width: 100%;
+        }
+        
+        .dashboard-card {
+            animation: cardEnter 0.5s ease-out forwards;
+            animation-delay: calc(var(--order) * 0.1s);
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            transform-style: preserve-3d;
+            perspective: 1000px;
+        }
+        
+        .dashboard-card:hover {
+            transform: translateY(-5px) rotateX(5deg);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        
+        .dashboard-card:hover .card-icon {
+            animation: pulse 1.5s infinite;
+        }
+        
+        .card-icon {
+            transition: all 0.3s ease;
+        }
+        
+        .shine-effect {
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .shine-effect::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -60%;
+            width: 200%;
+            height: 200%;
+            background: rgba(255, 255, 255, 0.13);
+            background: linear-gradient(
+                to right,
+                rgba(255, 255, 255, 0.13) 0%,
+                rgba(255, 255, 255, 0.13) 77%,
+                rgba(255, 255, 255, 0.5) 92%,
+                rgba(255, 255, 255, 0.0) 100%
+            );
+            transform: rotate(30deg);
+            transition: all 0.4s ease;
+            opacity: 0;
+        }
+        
+        .shine-effect:hover::after {
+            left: 100%;
+            opacity: 1;
+            transition-property: left, opacity;
+            transition-duration: 0.7s, 0.15s;
+            transition-timing-function: ease;
+        }
+        
+        .signal-green {
+            background-color: #10b981;
+            box-shadow: 0 0 10px #10b981;
+        }
+        
+        .signal-yellow {
+            background-color: #f59e0b;
+            box-shadow: 0 0 10px #f59e0b;
+        }
+        
+        .signal-red {
+            background-color: #ef4444;
+            box-shadow: 0 0 10px #ef4444;
+        }
+        
+        .signal-light {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        
+        .progress-bar {
+            height: 6px;
+            border-radius: 3px;
+            background-color: #e5e7eb;
+            overflow: hidden;
+        }
+        
+        .progress-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.6s ease;
+        }
+        
+        .train-marker {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background-color: #3b82f6;
+            border: 3px solid white;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+            animation: pulse 2s infinite;
+        }
+        
+        .delay-indicator {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #ef4444;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        
+        .submenu {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        
+        .submenu.active {
+            max-height: 500px;
+        }
+        
+        .submenu-item {
+            padding-left: 2.5rem;
+        }
+        
+        .map-container {
+            position: relative;
+            width: 100%;
+            height: 500px;
+            background-color: #f0f4f8;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        
+        #kavach-map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* Existing .module-card styles - kept as per instruction not to remove existing CSS */
+        .module-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .module-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        
+        .module-icon { /* This was for the old individual items' icons */
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+        /* End of existing .module-card styles */
+
+        .legend {
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            line-height: 1.5;
+            color: #555;
+        }
+        
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+        
+        .info {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: white;
+            background: rgba(255,255,255,0.8);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+        
+        .page-load-animation {
+            animation: slideInFromTop 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        
+        .status-bar-animation {
+            animation: fadeIn 1s ease-out 0.5s forwards;
+            opacity: 0;
+        }
+        
+        .shimmer-bg {
+            background: linear-gradient(to right, #eff1f3 4%, #e2e2e2 25%, #eff1f3 36%);
+            background-size: 1000px 100%;
+            animation: shimmer 1.5s infinite linear;
+        }
+        
+        .loading-placeholder {
+            height: 100px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .scrolling-container {
+            height: 100%;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .activity-list {
+            animation: scrollUp 20s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <div class="w-64 bg-gray-900 text-gray-300 flex flex-col">
+            <!-- Logo -->
+            <div class="p-6 flex items-center justify-center">
+                <div class="logo-animate">
+                    <div class="flex items-center">
+                        <i class="fas fa-train text-blue-400 text-3xl mr-3"></i>
+                        <span class="text-2xl font-bold text-white">KMS<span class="text-blue-400">Kavach</span></span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navigation -->
+            <nav class="flex-1 px-4 py-6">
+                <ul class="space-y-1">
+                    <li>
+                        <a href="#" id="nav-home" class="nav-item active flex items-center px-4 py-3 rounded-lg text-white bg-gray-800">
+                            <i class="fas fa-home mr-3 text-blue-400"></i>
+                            <span>Home</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-item flex items-center px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white">
+                            <i class="fas fa-mobile-alt mr-3"></i>
+                            <span>App & Portal</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-item flex items-center px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white">
+                            <i class="fas fa-newspaper mr-3"></i>
+                            <span>Blogs</span>
+                        </a>
+                    </li>
+                    <li>
+                        <div class="nav-item flex items-center justify-between px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white cursor-pointer" onclick="toggleSubmenu(this)">
+                            <div class="flex items-center">
+                                <i class="fas fa-database mr-3"></i>
+                                <span>Masters</span>
+                            </div>
+                            <i class="fas fa-chevron-down text-xs transition-transform duration-300"></i>
+                        </div>
+                        <ul class="submenu pl-2">
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Master 1</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Master 2</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-item flex items-center px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white">
+                            <i class="fas fa-upload mr-3"></i>
+                            <span>Uploads</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="nav-item flex items-center px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white">
+                            <i class="fas fa-chart-bar mr-3"></i>
+                            <span>Reports</span>
+                        </a>
+                    </li>
+                    <li>
+                        <div class="nav-item flex items-center justify-between px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white cursor-pointer" onclick="toggleSubmenu(this)">
+                            <div class="flex items-center">
+                                <i class="fas fa-chart-pie mr-3"></i>
+                                <span>Overview</span>
+                            </div>
+                            <i class="fas fa-chevron-down text-xs transition-transform duration-300"></i>
+                        </div>
+                        <ul class="submenu pl-2">
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Overview 1</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Overview 2</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <div class="nav-item flex items-center justify-between px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white cursor-pointer" onclick="toggleSubmenu(this)">
+                            <div class="flex items-center">
+                                <i class="fas fa-blog mr-3"></i>
+                                <span>Manage Blog</span>
+                            </div>
+                            <i class="fas fa-chevron-down text-xs transition-transform duration-300"></i>
+                        </div>
+                        <ul class="submenu pl-2">
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Blog Categories</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Blog Posts</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <div class="nav-item flex items-center justify-between px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white cursor-pointer" onclick="toggleSubmenu(this)">
+                            <div class="flex items-center">
+                                <i class="fas fa-sitemap mr-3"></i>
+                                <span>Manage Org</span>
+                            </div>
+                            <i class="fas fa-chevron-down text-xs transition-transform duration-300"></i>
+                        </div>
+                        <ul class="submenu pl-2">
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Departments</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Employees</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <div class="nav-item flex items-center justify-between px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white cursor-pointer" onclick="toggleSubmenu(this)">
+                            <div class="flex items-center">
+                                <i class="fas fa-photo-video mr-3"></i>
+                                <span>Manage Multimedia</span>
+                            </div>
+                            <i class="fas fa-chevron-down text-xs transition-transform duration-300"></i>
+                        </div>
+                        <ul class="submenu pl-2">
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Images</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Videos</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <div class="nav-item flex items-center justify-between px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white cursor-pointer" onclick="toggleSubmenu(this)">
+                            <div class="flex items-center">
+                                <i class="fas fa-link mr-3"></i>
+                                <span>Manage Link</span>
+                            </div>
+                            <i class="fas fa-chevron-down text-xs transition-transform duration-300"></i>
+                        </div>
+                        <ul class="submenu pl-2">
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>Internal Links</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#" class="nav-item flex items-center px-4 py-2 rounded-lg hover:bg-gray-800 hover:text-white submenu-item">
+                                    <i class="fas fa-circle-notch mr-2 text-xs"></i>
+                                    <span>External Links</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#" id="nav-chatbot" class="nav-item flex items-center px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white">
+                            <i class="fas fa-robot mr-3"></i>
+                            <span>Kavach Chatbot</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" id="nav-ai-search" class="nav-item flex items-center px-4 py-3 rounded-lg hover:bg-gray-800 hover:text-white">
+                            <i class="fas fa-search mr-3"></i>
+                            <span>AI Search</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+            
+            <!-- User Profile -->
+            <div class="p-4 border-t border-gray-800">
+                <div class="flex items-center">
+                    <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="User" class="w-10 h-10 rounded-full">
+                    <div class="ml-3">
+                        <p class="text-white font-medium">Admin User</p>
+                        <p class="text-gray-400 text-sm">System Administrator</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col overflow-hidden"> <!-- flex-col for header + content-area -->
+            <!-- Header -->
+            <header id="main-app-header" class="bg-white shadow-sm shrink-0">
+                <div class="px-8 py-6">
+                    <div class="flex justify-between items-center">
+                        <div class="flex-grow text-center">
+                            <h1 class="text-3xl font-bold text-gray-800 page-load-animation">Knowledge Management System - Kavach</h1>
+                            <p class="text-lg italic text-gray-600 mt-1">Center of Excellence - Kavach</p>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <div class="relative">
+                                <i class="fas fa-bell text-gray-500 text-xl"></i>
+                                <span class="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+                            </div>
+                            <div class="relative">
+                                <i class="fas fa-envelope text-gray-500 text-xl"></i>
+                                <span class="absolute top-0 right-0 w-2 h-2 bg-blue-500 rounded-full"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            
+            <!-- Page Content Wrapper (takes remaining space) -->
+            <div id="page-content-area" class="flex-1 overflow-y-auto relative"> 
+                <!-- Dashboard Content (Home) -->
+                <main id="home-content" class="p-8">
+                    <!-- Loading Placeholder (removed after content loads) -->
+                    <div id="loading-placeholder" class="shimmer-bg loading-placeholder"></div>
+                    
+                    <!-- Container for Modules and Recent Activities -->
+                    <div class="grid grid-cols-1 md:grid-cols-[11fr_4fr] gap-6">
+                        <!-- Modules Card -->
+                        <div class="dashboard-card bg-white rounded-xl shadow-md p-6 mb-8" style="--order: 1;">
+                            <h2 class="text-xl font-bold text-gray-800 mb-6">Modules</h2>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                                <!-- KAVACH Module -->
+                                <div class="module-item bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl p-6 text-center shadow-lg hover:shadow-blue-500/20 transform hover:scale-105 transition-all duration-300 ease-in-out cursor-pointer group" onclick="openModule('KAVACH')">
+                                    <div class="module-item-icon text-blue-600 mb-4 text-5xl transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg]">
+                                        <i class="fas fa-shield-alt"></i>
+                                    </div>
+                                    <h3 class="text-xl font-semibold text-gray-700 mb-1 group-hover:text-blue-700 transition-colors duration-300">KAVACH</h3>
+                                    <p class="text-sm text-gray-500 group-hover:text-blue-600 transition-colors duration-300">Explore Details</p>
+                                </div>
+                                
+                                <!-- LTE Module -->
+                                <div class="module-item bg-gradient-to-br from-green-100 to-green-200 rounded-xl p-6 text-center shadow-lg hover:shadow-green-500/20 transform hover:scale-105 transition-all duration-300 ease-in-out cursor-pointer group" onclick="openModule('LTE')">
+                                    <div class="module-item-icon text-green-600 mb-4 text-5xl transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg]">
+                                        <i class="fas fa-network-wired"></i>
+                                    </div>
+                                    <h3 class="text-xl font-semibold text-gray-700 mb-1 group-hover:text-green-700 transition-colors duration-300">LTE</h3>
+                                    <p class="text-sm text-gray-500 group-hover:text-green-600 transition-colors duration-300">Explore Details</p>
+                                </div>
+                                
+                                <!-- 5G Module -->
+                                <div class="module-item bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl p-6 text-center shadow-lg hover:shadow-purple-500/20 transform hover:scale-105 transition-all duration-300 ease-in-out cursor-pointer group" onclick="openModule('5G')">
+                                    <div class="module-item-icon text-purple-600 mb-4 text-5xl transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg]">
+                                        <i class="fas fa-bolt"></i>
+                                    </div>
+                                    <h3 class="text-xl font-semibold text-gray-700 mb-1 group-hover:text-purple-700 transition-colors duration-300">5G</h3>
+                                    <p class="text-sm text-gray-500 group-hover:text-purple-600 transition-colors duration-300">Explore Details</p>
+                                </div>
+                                
+                                <!-- 6G Module -->
+                                <div class="module-item bg-gradient-to-br from-yellow-100 to-yellow-200 rounded-xl p-6 text-center shadow-lg hover:shadow-yellow-500/20 transform hover:scale-105 transition-all duration-300 ease-in-out cursor-pointer group" onclick="openModule('6G')">
+                                    <div class="module-item-icon text-yellow-600 mb-4 text-5xl transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg]">
+                                        <i class="fas fa-satellite-dish"></i>
+                                    </div>
+                                    <h3 class="text-xl font-semibold text-gray-700 mb-1 group-hover:text-yellow-700 transition-colors duration-300">6G</h3>
+                                    <p class="text-sm text-gray-500 group-hover:text-yellow-600 transition-colors duration-300">Explore Details</p>
+                                </div>
+                                
+                                <!-- 7G Module -->
+                                <div class="module-item bg-gradient-to-br from-red-100 to-red-200 rounded-xl p-6 text-center shadow-lg hover:shadow-red-500/20 transform hover:scale-105 transition-all duration-300 ease-in-out cursor-pointer group" onclick="openModule('7G')">
+                                    <div class="module-item-icon text-red-600 mb-4 text-5xl transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg]">
+                                        <i class="fas fa-atom"></i>
+                                    </div>
+                                    <h3 class="text-xl font-semibold text-gray-700 mb-1 group-hover:text-red-700 transition-colors duration-300">7G</h3>
+                                    <p class="text-sm text-gray-500 group-hover:text-red-600 transition-colors duration-300">Explore Details</p>
+                                </div>
+                                
+                                <!-- ORGANISATION Module -->
+                                <div class="module-item bg-gradient-to-br from-indigo-100 to-indigo-200 rounded-xl p-6 text-center shadow-lg hover:shadow-indigo-500/20 transform hover:scale-105 transition-all duration-300 ease-in-out cursor-pointer group" onclick="openModule('ORGANISATION')">
+                                    <div class="module-item-icon text-indigo-600 mb-4 text-5xl transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg]">
+                                        <i class="fas fa-sitemap"></i>
+                                    </div>
+                                    <h3 class="text-xl font-semibold text-gray-700 mb-1 group-hover:text-indigo-700 transition-colors duration-300">ORGANISATION</h3>
+                                    <p class="text-sm text-gray-500 group-hover:text-indigo-600 transition-colors duration-300">Explore Details</p>
+                                </div>
+                                
+                                <!-- BLOG Module -->
+                                <div class="module-item bg-gradient-to-br from-pink-100 to-pink-200 rounded-xl p-6 text-center shadow-lg hover:shadow-pink-500/20 transform hover:scale-105 transition-all duration-300 ease-in-out cursor-pointer group" onclick="openModule('BLOG')">
+                                    <div class="module-item-icon text-pink-600 mb-4 text-5xl transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[-5deg]">
+                                        <i class="fas fa-blog"></i>
+                                    </div>
+                                    <h3 class="text-xl font-semibold text-gray-700 mb-1 group-hover:text-pink-700 transition-colors duration-300">BLOG</h3>
+                                    <p class="text-sm text-gray-500 group-hover:text-pink-600 transition-colors duration-300">Explore Details</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Recent Activities Card -->
+                        <div class="dashboard-card bg-white rounded-xl shadow-md p-6 flex flex-col mb-8" style="--order: 2;">
+                            <div class="flex justify-between items-center mb-6">
+                                <h2 class="text-xl font-bold text-gray-800">Recent Activities</h2>
+                                <button class="text-blue-600 text-sm font-medium">View All</button>
+                            </div>
+                            
+                            <div class="scrolling-container flex-1">
+                                <div class="activity-list space-y-4">
+                                    <!-- Original Activities -->
+                                    <div class="flex items-start p-3 rounded-lg bg-blue-50 border-l-4 border-blue-500">
+                                        <div class="mr-3 text-blue-500">
+                                            <i class="fas fa-train"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-800">Kavach installed on 15 new locomotives</p>
+                                            <p class="text-sm text-gray-600">Northern Railway Zone</p>
+                                            <p class="text-xs text-gray-500 mt-1">2 hours ago</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-start p-3 rounded-lg bg-green-50 border-l-4 border-green-500">
+                                        <div class="mr-3 text-green-500">
+                                            <i class="fas fa-check-circle"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-800">Testing completed for LTE integration</p>
+                                            <p class="text-sm text-gray-600">Eastern Railway Zone</p>
+                                            <p class="text-xs text-gray-500 mt-1">5 hours ago</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-start p-3 rounded-lg bg-yellow-50 border-l-4 border-yellow-500">
+                                        <div class="mr-3 text-yellow-500">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-800">Maintenance required for 5G test equipment</p>
+                                            <p class="text-sm text-gray-600">Research & Development</p>
+                                            <p class="text-xs text-gray-500 mt-1">1 day ago</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-start p-3 rounded-lg bg-purple-50 border-l-4 border-purple-500">
+                                        <div class="mr-3 text-purple-500">
+                                            <i class="fas fa-users"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-800">New training session scheduled for engineers</p>
+                                            <p class="text-sm text-gray-600">Human Resources</p>
+                                            <p class="text-xs text-gray-500 mt-1">2 days ago</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Duplicated Activities for Seamless Scrolling -->
+                                    <div class="flex items-start p-3 rounded-lg bg-blue-50 border-l-4 border-blue-500">
+                                        <div class="mr-3 text-blue-500">
+                                            <i class="fas fa-train"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-800">Kavach installed on 15 new locomotives</p>
+                                            <p class="text-sm text-gray-600">Northern Railway Zone</p>
+                                            <p class="text-xs text-gray-500 mt-1">2 hours ago</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-start p-3 rounded-lg bg-green-50 border-l-4 border-green-500">
+                                        <div class="mr-3 text-green-500">
+                                            <i class="fas fa-check-circle"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-800">Testing completed for LTE integration</p>
+                                            <p class="text-sm text-gray-600">Eastern Railway Zone</p>
+                                            <p class="text-xs text-gray-500 mt-1">5 hours ago</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-start p-3 rounded-lg bg-yellow-50 border-l-4 border-yellow-500">
+                                        <div class="mr-3 text-yellow-500">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-800">Maintenance required for 5G test equipment</p>
+                                            <p class="text-sm text-gray-600">Research & Development</p>
+                                            <p class="text-xs text-gray-500 mt-1">1 day ago</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-start p-3 rounded-lg bg-purple-50 border-l-4 border-purple-500">
+                                        <div class="mr-3 text-purple-500">
+                                            <i class="fas fa-users"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-800">New training session scheduled for engineers</p>
+                                            <p class="text-sm text-gray-600">Human Resources</p>
+                                            <p class="text-xs text-gray-500 mt-1">2 days ago</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </main>
+
+                <!-- Iframe Container (initially hidden, fills parent when visible) -->
+                <div id="iframe-container" class="w-full h-full hidden">
+                    <!-- Iframe will be dynamically inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet MarkerCluster JS -->
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <!-- Leaflet AJAX for GeoJSON loading -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-ajax/2.1.0/leaflet.ajax.min.js"></script>
+
+    <script>
+        // GK variables (already present)
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const navLinkItems = document.querySelectorAll('nav a.nav-item'); // Select only <a> tags for active state
+            const homeLink = document.getElementById('nav-home');
+            const chatbotLink = document.getElementById('nav-chatbot');
+            const aiSearchLink = document.getElementById('nav-ai-search');
+            
+            const homeContent = document.getElementById('home-content');
+            const iframeContainer = document.getElementById('iframe-container');
+            const mainAppHeader = document.getElementById('main-app-header');
+
+
+            // Refined navigation active state handler for <a> tags
+            navLinkItems.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault(); // Prevent default navigation for all JS-handled links
+                    
+                    // Remove active class from all <a> nav items
+                    navLinkItems.forEach(navLink => {
+                        navLink.classList.remove('active', 'bg-gray-800', 'text-white');
+                        const icon = navLink.querySelector('i');
+                        if (icon) {
+                            icon.classList.remove('text-blue-400');
+                            // Assuming default icon color is handled by CSS (e.g., text-gray-300 on sidebar)
+                        }
+                    });
+                    
+                    // Add active class to clicked <a> nav item
+                    this.classList.add('active', 'bg-gray-800', 'text-white');
+                    const icon = this.querySelector('i');
+                    if (icon) {
+                        icon.classList.add('text-blue-400');
+                    }
+                });
+            });
+
+            // Specific click handlers for Home, Chatbot, AI Search
+            if (homeLink) {
+                homeLink.addEventListener('click', () => {
+                    if (mainAppHeader) mainAppHeader.classList.remove('hidden');
+                    homeContent.classList.remove('hidden');
+                    iframeContainer.classList.add('hidden');
+                    iframeContainer.innerHTML = ''; // Clear previous iframe
+                });
+            }
+
+            if (chatbotLink) {
+                chatbotLink.addEventListener('click', () => {
+                    if (mainAppHeader) mainAppHeader.classList.add('hidden');
+                    homeContent.classList.add('hidden');
+                    iframeContainer.innerHTML = `<iframe src="https://iriset.railnet.gov.in/content/CoE/kavachchatbot.html" style="width:100%; height:100%; border:none;" title="Kavach Chatbot"></iframe>`;
+                    iframeContainer.classList.remove('hidden');
+                });
+            }
+
+            if (aiSearchLink) {
+                aiSearchLink.addEventListener('click', () => {
+                    if (mainAppHeader) mainAppHeader.classList.add('hidden');
+                    homeContent.classList.add('hidden');
+                    iframeContainer.innerHTML = `<iframe src="https://coekav-signallingsearch.hf.space/" style="width:100%; height:100%; border:none;" title="AI Search"></iframe>`;
+                    iframeContainer.classList.remove('hidden');
+                });
+            }
+            
+            // Simulate loading of dashboard cards
+            const cards = document.querySelectorAll('.dashboard-card');
+            cards.forEach(card => {
+                setTimeout(() => {
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, 1000);
+            });
+            
+            // Initialize the Kavach implementation map if homeContent is visible
+            if (homeContent && !homeContent.classList.contains('hidden')) {
+                 initKavachMap(); // This will now do nothing if 'kavach-map' div is removed, which is fine.
+            }
+            
+            // Remove loading placeholder after content loads
+            setTimeout(() => {
+                const loadingPlaceholder = document.getElementById('loading-placeholder');
+                if (loadingPlaceholder) {
+                    loadingPlaceholder.style.display = 'none';
+                }
+            }, 800);
+        });
+        
+        function toggleSubmenu(element) {
+            const submenu = element.nextElementSibling;
+            const icon = element.querySelector('.fa-chevron-down');
+            
+            submenu.classList.toggle('active');
+            icon.classList.toggle('rotate-180');
+        }
+        
+        function openModule(moduleName) {
+            alert(`Opening ${moduleName} module...`);
+        }
+        
+        function initKavachMap() {
+            if (document.getElementById('kavach-map') && !document.getElementById('kavach-map')._leaflet_id) { // Check if map is not already initialized
+                const map = L.map('kavach-map').setView([20.5937, 78.9629], 5);
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+                
+                const markers = L.markerClusterGroup();
+                
+                const kavachData = [
+                    { name: "Delhi Division", lat: 28.6139, lng: 77.2090, status: "completed", locos: 1250, routes: 8 },
+                    { name: "Mumbai Division", lat: 19.0760, lng: 72.8777, status: "completed", locos: 980, routes: 6 },
+                    { name: "Chennai Division", lat: 13.0827, lng: 80.2707, status: "in-progress", locos: 750, routes: 5 },
+                    { name: "Kolkata Division", lat: 22.5726, lng: 88.3639, status: "in-progress", locos: 680, routes: 4 },
+                    { name: "Bangalore Division", lat: 12.9716, lng: 77.5946, status: "completed", locos: 920, routes: 7 },
+                    { name: "Hyderabad Division", lat: 17.3850, lng: 78.4867, status: "completed", locos: 850, routes: 5 },
+                    { name: "Ahmedabad Division", lat: 23.0225, lng: 72.5714, status: "pending", locos: 320, routes: 2 },
+                    { name: "Pune Division", lat: 18.5204, lng: 73.8567, status: "in-progress", locos: 540, routes: 3 },
+                    { name: "Jaipur Division", lat: 26.9124, lng: 75.7873, status: "pending", locos: 280, routes: 2 },
+                    { name: "Lucknow Division", lat: 26.8467, lng: 80.9462, status: "in-progress", locos: 450, routes: 3 },
+                    { name: "Bhopal Division", lat: 23.2599, lng: 77.4126, status: "pending", locos: 380, routes: 2 },
+                    { name: "Patna Division", lat: 25.5941, lng: 85.1376, status: "in-progress", locos: 420, routes: 2 },
+                    { name: "Bhubaneswar Division", lat: 20.2961, lng: 85.8245, status: "completed", locos: 580, routes: 4 },
+                    { name: "Guwahati Division", lat: 26.1445, lng: 91.7362, status: "pending", locos: 210, routes: 1 },
+                    { name: "Thiruvananthapuram Division", lat: 8.5241, lng: 76.9366, status: "completed", locos: 490, routes: 3 }
+                ];
+                
+                const completedIcon = L.divIcon({
+                    html: '<div class="train-marker" style="background-color: #10b981;"></div>',
+                    className: 'dummy', // Important: Leaflet adds 'leaflet-marker-icon', className is for custom additional classes
+                    iconSize: [24, 24]
+                });
+                
+                const inProgressIcon = L.divIcon({
+                    html: '<div class="train-marker" style="background-color: #f59e0b;"></div>',
+                    className: 'dummy',
+                    iconSize: [24, 24]
+                });
+                
+                const pendingIcon = L.divIcon({
+                    html: '<div class="train-marker" style="background-color: #ef4444;"></div>',
+                    className: 'dummy',
+                    iconSize: [24, 24]
+                });
+                
+                kavachData.forEach(division => {
+                    let icon;
+                    if (division.status === "completed") {
+                        icon = completedIcon;
+                    } else if (division.status === "in-progress") {
+                        icon = inProgressIcon;
+                    } else {
+                        icon = pendingIcon;
+                    }
+                    
+                    const marker = L.marker([division.lat, division.lng], { icon: icon })
+                        .bindPopup(`
+                            <div class="font-bold text-lg">${division.name}</div>
+                            <div class="mt-2">
+                                <div class="flex items-center">
+                                    <span class="w-3 h-3 rounded-full mr-2 ${division.status === 'completed' ? 'bg-green-500' : division.status === 'in-progress' ? 'bg-yellow-500' : 'bg-red-500'}"></span>
+                                    <span>${division.status === 'completed' ? 'Completed' : division.status === 'in-progress' ? 'In Progress' : 'Pending'}</span>
+                                </div>
+                                <div class="mt-1">Locomotives: <span class="font-bold">${division.locos}</span></div>
+                                <div class="mt-1">Routes: <span class="font-bold">${division.routes}</span></div>
+                            </div>
+                        `);
+                    
+                    markers.addLayer(marker);
+                });
+                
+                map.addLayer(markers);
+                
+                const legend = L.control({ position: 'bottomright' });
+                
+                legend.onAdd = function(map) {
+                    const div = L.DomUtil.create('div', 'legend');
+                    div.innerHTML = `
+                        <h4 class="font-bold mb-2">Kavach Status</h4>
+                        <div class="flex items-center mb-1">
+                            <i style="background: #10b981;"></i> Completed
+                        </div>
+                        <div class="flex items-center mb-1">
+                            <i style="background: #f59e0b;"></i> In Progress
+                        </div>
+                        <div class="flex items-center">
+                            <i style="background: #ef4444;"></i> Pending
+                        </div>
+                    `;
+                    return div;
+                };
+                
+                legend.addTo(map);
+                
+                // Info control removed for brevity as it was not directly requested to be modified
+            }
+        }
+    </script>
+</body>
+</html>
